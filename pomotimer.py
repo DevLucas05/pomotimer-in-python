@@ -1,6 +1,6 @@
 import tkinter as tk
-from tkinter import messagebox
 import math
+import threading
 from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw
 from plyer import notification
@@ -10,7 +10,7 @@ class PomodoroTimer:
     """Constantes do método pomodoro"""
     WORK_MIN = 25
     SHORT_BREAK_MIN = 5
-    LONG_BRAKE_MIN = 15
+    LONG_BREAK_MIN = 15  # Corrected typo from LONG_BRAKE_MIN
 
     def __init__(self, master):
         self.master = master
@@ -59,34 +59,43 @@ class PomodoroTimer:
         self.check_marks = tk.Label(fg=self.GREEN, bg=self.BG_COLOR, font=('Segoe UI', 14))
         self.check_marks.grid(column=1, row=3, pady=20)
 
-        keyboard.add_hotkey('ctrl + alt + s', self.start_with_hotkey)
+        # System Tray Icon Setup
+        image = self.create_image()
+        menu = Menu(
+            MenuItem('Show', self.show_window),
+            MenuItem('Quit', self.quit_app)
+        )
+        self.icon = Icon('Pomodoro', image, "PomoTimer", menu)
 
-        self.master.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
+        self.master.protocol("WM_DELETE_WINDOW", self.hide_window)
+        keyboard.add_hotkey('ctrl + alt + s', self.start_with_hotkey)
 
     """Funcao para notificacao do desktop"""
     def show_notification(self, title, message):
         notification.notify(
             title=title,
             message=message,
-            timeout=5  # Mensagem aparecera por 5 segundos
+            timeout=5
         )
 
     """"Função para resetar o timer"""
     def reset_timer(self):
         if self.timer:
             self.master.after_cancel(self.timer)
+        self.start_buttom.config(state='normal')
         self.canvas.itemconfig(self.timer_text, text='00:00')
-        self.label.config(text='Temporizador')
+        self.label.config(text='Timer', fg=self.GREEN)
         self.check_marks.config(text='')
         self.reps = 0
         self.show_notification('Pomodoro Timer', 'Timer foi resetado.')
 
     """Iniciar o timer"""
     def start_timer(self):
+        self.start_buttom.config(state='disabled')
         self.reps += 1
         work_sec = self.WORK_MIN * 60
         short_break_sec = self.SHORT_BREAK_MIN * 60
-        long_break_sec = self.LONG_BRAKE_MIN * 60
+        long_break_sec = self.LONG_BREAK_MIN * 60
 
         if self.reps % 8 == 0:
             self.count_down(long_break_sec)
@@ -107,8 +116,6 @@ class PomodoroTimer:
         count_sec = count % 60
         if count_sec < 10:
             count_sec = f'0{count_sec}'
-        else:
-            count_sec = str(count_sec)
 
         self.canvas.itemconfig(self.timer_text, text=f'{count_min}:{count_sec}')
 
@@ -122,33 +129,34 @@ class PomodoroTimer:
                 marks += '✓'
             self.check_marks.config(text=marks)
 
-    """Funcoes de Sistema"""
+    """Funcoes de Sistema (Bandeja)"""
     def create_image(self):
         image = Image.new('RGB', (64, 64), (255, 255, 255))
         dc = ImageDraw.Draw(image)
         dc.rectangle((16, 16, 48, 48), fill=(0, 128, 0))
         return image
 
-    def show_app(self, icon, item):
-        icon.stop()
-        self.master.after(0, self.master.deiconify)  # Amostra a janela principal
+    def hide_window(self):
+        self.master.withdraw()
+        threading.Thread(target=self.icon.run, daemon=True).start()
+
+    def show_window(self, icon, item):
+        self.icon.stop()
+        self.master.after(0, self.master.deiconify)
 
     def quit_app(self, icon, item):
-        icon.stop()
-        self.master.quit()
-
-    def minimize_to_tray(self):
-        self.master.withdraw()  # esconde a janela
-        icon = Icon('Pomodoro', self.create_image(), menu=Menu(
-            MenuItem('Show', self.show_app),
-            MenuItem('Quit', self.quit_app)
-        ))
-        icon.run()
+        self.icon.stop()
+        if self.timer:
+            self.master.after_cancel(self.timer)
+        keyboard.remove_hotkey('ctrl + alt + s')
+        self.master.destroy()
 
     """Funcoes de atalho de teclado"""
     def start_with_hotkey(self):
-        self.show_notification('Pomodoro Timer', 'Started via Hotkey!!')
-        self.start_timer()
+        # Only start if the timer is not already running
+        if self.start_buttom['state'] == 'normal':
+            self.show_notification('Pomodoro Timer', 'Started via Hotkey!!')
+            self.start_timer()
 
 def main():
     window = tk.Tk()
